@@ -26,7 +26,7 @@ export function resolveConfig(options: OpensplineConfig): Readonly<Required<Open
   if (typeof config.url !== 'string' || !/^https?:\/\//.test(config.url) || !['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash || url.port === '0' || /\s/.test(config.url)) {
     throw new TypeError('url must be an HTTP or HTTPS URL without credentials, query, or fragment');
   }
-  if (!['low', 'high'].includes(config.quality)) throw new TypeError('quality must be low or high');
+  if (!['low', 'medium', 'high'].includes(config.quality)) throw new TypeError('quality must be low, medium or high');
   for (const name of ['timeout', 'viewerTimeout'] as const) {
     if (typeof config[name] !== 'number' || !Number.isFinite(config[name]) || config[name] <= 0 || config[name] > 2147483647 || !Number.isInteger(config[name])) {
       throw new TypeError(`${name} must be a positive integer of milliseconds (at most 2147483647)`);

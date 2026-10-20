@@ -53,8 +53,8 @@ class Openspline:
 
     def avatar(self, portrait, quality: Quality | None = None, *, background=None):
         quality = self.config.quality if quality is None else quality
-        if quality not in {"low", "high"}:
-            raise ValueError("quality must be low or high")
+        if quality not in {"low", "medium", "high"}:
+            raise ValueError("quality must be low, medium or high")
         return AvatarSession(self, portrait, quality, background)
 
 

@@ -9,6 +9,7 @@ from types import SimpleNamespace
 from dotenv import dotenv_values, load_dotenv, set_key, unset_key
 
 from .config import Settings, WorkerConfig
+from .quality import QUALITIES
 
 
 def environment(root):
@@ -68,8 +69,10 @@ def configure(config, *, demo=False):
         settings.workers = [WorkerConfig(worker.id, worker.quality, (0,))]
         settings.demo_high_devices = (0,)
     if quality is not None:
-        if quality not in {"low", "high"} or len(settings.workers) != 1:
-            raise ValueError("OPENSPLINE_QUALITY must be low or high for a single worker")
+        if quality not in QUALITIES or len(settings.workers) != 1:
+            raise ValueError(
+                "OPENSPLINE_QUALITY must be " + ", ".join(QUALITIES) + " for a single worker"
+            )
         worker = settings.workers[0]
         group = settings.demo_high_devices or worker.devices
         if len(worker.devices) > 1:

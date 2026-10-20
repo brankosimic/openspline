@@ -1,4 +1,12 @@
 import { nextPlayoutTime } from './playout.js';
+/**
+ * Session tokens also travel in their own header: a site behind HTTP basic
+ * auth makes browsers replace the Authorization header with the cached Basic
+ * credentials, which would hide the Bearer token from the server.
+ */
+export function sessionTokenHeaders(token) {
+    return { Authorization: `Bearer ${token}`, 'X-Session-Token': token };
+}
 /** PCM and JPEG share the Web Audio clock; feedback bounds the server's queue. */
 export class SocketPlayback extends EventTarget {
     session;
@@ -6,6 +14,7 @@ export class SocketPlayback extends EventTarget {
     socket;
     context;
     canvas = document.createElement('canvas');
+    size = 512;
     stream;
     recordingDestination;
     sources = new Set();
@@ -57,8 +66,11 @@ export class SocketPlayback extends EventTarget {
             clearTimeout(this.timeout);
             this.epoch = event.epoch;
             this.context = new AudioContext({ sampleRate: 48000 });
-            this.canvas.width = this.canvas.height = 512;
-            const response = await fetch(`${this.session.url}/v1/sessions/${this.session.id}/portrait`, { headers: { Authorization: `Bearer ${this.session.token}` } });
+            // The server reports the model's frame size; the descriptor may predate it.
+            const size = event.size ?? this.session.size ?? 512;
+            this.size = size;
+            this.canvas.width = this.canvas.height = size;
+            const response = await fetch(`${this.session.url}/v1/sessions/${this.session.id}/portrait`, { headers: sessionTokenHeaders(this.session.token) });
             if (!response.ok)
                 throw new Error('Could not load avatar portrait');
             const image = await createImageBitmap(await response.blob());
@@ -67,7 +79,7 @@ export class SocketPlayback extends EventTarget {
                 return;
             }
             this.portrait = image;
-            this.canvas.getContext('2d').drawImage(image, 0, 0, 512, 512);
+            this.canvas.getContext('2d').drawImage(image, 0, 0, size, size);
             this.stream = this.canvas.captureStream(25);
             this.video.srcObject = this.stream;
             // Only the Web Audio output plays sound; the video stream contains pictures.
@@ -89,7 +101,7 @@ export class SocketPlayback extends EventTarget {
             const image = await createImageBitmap(new Blob([bytes], { type: 'image/jpeg' }));
             if (!this.closed && event.epoch === this.epoch) {
                 if (!this.frames.length && !this.acknowledgments.length) {
-                    this.canvas.getContext('2d').drawImage(image, 0, 0, 512, 512);
+                    this.canvas.getContext('2d').drawImage(image, 0, 0, this.size, this.size);
                     if (!this.idle) {
                         this.idle = true;
                         this.event('statechange', 'ready');
@@ -164,7 +176,7 @@ export class SocketPlayback extends EventTarget {
         }
         while (this.frames.length && this.frames[0].at <= context.currentTime) {
             const { image } = this.frames.shift();
-            this.canvas.getContext('2d').drawImage(image, 0, 0, 512, 512);
+            this.canvas.getContext('2d').drawImage(image, 0, 0, this.size, this.size);
             image.close();
         }
         while (this.acknowledgments.length && this.acknowledgments[0].at <= context.currentTime) {

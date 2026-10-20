@@ -214,7 +214,7 @@ client = Openspline(config=config)  # a dict works too
 | Python / Node option | Default | Purpose |
 | --- | --- | --- |
 | `url` | `OPENSPLINE_URL` or `http://localhost:7860` | Service address |
-| `quality` | `low` | Default quality: `low` or `high` |
+| `quality` | `low` | Default quality: `low`, `medium` or `high` |
 | `timeout` | 180 s / 180,000 ms | HTTP and audio request timeout |
 | `viewer_timeout` / `viewerTimeout` | 60 s / 60,000 ms | Wait for the playback destination |
 
@@ -257,9 +257,24 @@ The built-in demo uses WebSocket playback through the server's HTTP port, includ
 
 ## GPU workers
 
+### Quality tiers
+
+| Quality | Model | Output | Frame rate | Notes |
+| --- | --- | --- | --- | --- |
+| `low` | Lite | 512 | 25 | Fastest; several times real time on one GPU. |
+| `medium` | Lite | 768 | 25 | Same model, more spatial detail; still real time on one GPU. |
+| `high` | Pro | 512 | 25 (8 on one GPU) | Better motion; needs a GPU pair to hold 25 FPS. |
+
+The Pro model costs roughly seven times more per frame than the Lite model
+because its VAE keeps four times the spatial resolution, so one GPU cannot
+produce it at 25 FPS. A single-GPU worker therefore runs the Pro model at 8
+FPS, which is the rate it can sustain in real time; the playout timeline
+follows the model's rate, so the viewer stays in sync and never starves. Set
+`fps` on a worker in `workers.yaml` to override the rate.
+
 ### Choose GPUs in the demo
 
-Choose GPUs directly in the demo: one for Low, or one or more for High. The picker shows GPU names and memory; your selection is applied when you start and saved for restarts by the curl install. You can also set `OPENSPLINE_GPUS=0,1` when installing. Explicit `CUDA_VISIBLE_DEVICES` limits are respected. `/readyz` reports the active devices and inference ranks.
+Choose GPUs directly in the demo: one for Low or Medium, or one or more for High. The picker shows GPU names and memory; your selection is applied when you start and saved for restarts by the curl install. You can also set `OPENSPLINE_GPUS=0,1` when installing. Explicit `CUDA_VISIBLE_DEVICES` limits are respected. `/readyz` reports the active devices and inference ranks.
 
 ### Configure multiple workers
 
@@ -269,9 +284,10 @@ Edit `~/.local/share/openspline/workers.yaml` ([example](workers.yaml)). Each wo
 workers:
   - { id: low-0, quality: low, devices: [0] }
   - { id: low-1, quality: low, devices: [1] }
+  - { id: high-0, quality: high, devices: [2, 3] }
 ```
 
-The demo switches quality automatically for a single worker. For SDK sessions or multiple workers, configure a worker with `quality: high, devices: [0, 1]` to use a GPU pair, then run `sh ~/.local/share/openspline/run.sh --prepare` before starting. Busy workers return a typed `CapacityError`; an unconfigured quality returns `ConfigurationError`. IDs are relative to `CUDA_VISIBLE_DEVICES` when set. For multiple workers, remove `OPENSPLINE_GPU`, `OPENSPLINE_GPUS`, and `OPENSPLINE_QUALITY` overrides from the installed `.env` and configure devices in `workers.yaml`.
+The demo switches quality automatically for a single worker. For SDK sessions or multiple workers, configure a worker with `quality: high, devices: [0, 1]` to use a GPU pair, then run `sh ~/.local/share/openspline/run.sh --prepare` before starting. A worker may pin its frame rate with `fps: 8`. Busy workers return a typed `CapacityError`; an unconfigured quality returns `ConfigurationError`. IDs are relative to `CUDA_VISIBLE_DEVICES` when set. For multiple workers, remove `OPENSPLINE_GPU`, `OPENSPLINE_GPUS`, and `OPENSPLINE_QUALITY` overrides from the installed `.env` and configure devices in `workers.yaml`.
 
 ### Network settings
 
@@ -284,7 +300,7 @@ Run `uv sync --all-packages`, `npm ci && npm run build`, then `uv run pytest && 
 
 Regenerate the native installer dependency locks with `python scripts/lock-gpu.py` (requires `uv`). The installer combines `requirements/server.txt` with the selected `cu126.txt` or `cu128.txt` runtime lock.
 
-Real low/high inference, GPU streaming, browser/React playback, and native LiveKit have been exercised. Short A100 tests measured about 64 FPS for low quality and 8 FPS for high quality under different load conditions; these are engine rates, not playback latency. Long-duration, multi-GPU, cloud-provider, and TEN runtime validation remain incomplete.
+Real low/medium/high inference, GPU streaming, browser/React playback, and native LiveKit have been exercised. Short A100 tests measured about 64 FPS for low quality and 8 FPS for high quality under different load conditions; these are engine rates, not playback latency. On one RTX 4090 the Lite model measured about 131 FPS at 512 and 56 FPS at 768, and the Pro model about 12 FPS, which is why the Pro tier runs at 8 FPS there. Long-duration, multi-GPU, cloud-provider, and TEN runtime validation remain incomplete.
 
 </details>
 

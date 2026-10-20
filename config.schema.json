@@ -19,6 +19,7 @@
           "type": "string",
           "enum": [
             "low",
+            "medium",
             "high"
           ],
           "default": "low"
@@ -53,6 +54,7 @@
           "type": "string",
           "enum": [
             "low",
+            "medium",
             "high"
           ],
           "default": "low"
@@ -104,9 +106,16 @@
                 "type": "string",
                 "enum": [
                   "low",
+                  "medium",
                   "high"
                 ],
                 "default": "low"
+              },
+              "fps": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 60,
+                "description": "Frame-rate override. By default each quality tier picks a rate its model can sustain on the configured GPUs."
               },
               "devices": {
                 "type": "array",
@@ -123,7 +132,10 @@
                 "if": {
                   "properties": {
                     "quality": {
-                      "const": "low"
+                      "enum": [
+                        "low",
+                        "medium"
+                      ]
                     }
                   }
                 },
