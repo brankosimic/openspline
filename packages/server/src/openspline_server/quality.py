@@ -13,22 +13,24 @@ QUALITY_PROFILES = {
     "high": {"model": "pro", "size": 512, "fps": 25},
 }
 QUALITIES = tuple(QUALITY_PROFILES)
-# The Pro model cannot sustain 25 fps on one GPU, so it runs slower there and
-# the playout timeline follows the model's rate instead of starving. Eight
-# frames per second is the break-even for the Pro model on a single 24 GB GPU:
-# it produces a little faster than real time, so the viewer never runs dry.
-SINGLE_GPU_PRO_FPS = 8
+# One GPU cannot render the Pro model at 512 within the real-time budget, and
+# lowering its frame rate would make it animate the audio too slowly, so the
+# lip sync drifts. A smaller output keeps the model's 25 FPS motion cadence
+# and still fits: 35 FPS at 320 against 12 FPS at 512 on a single 24 GB GPU.
+SINGLE_GPU_PRO_SIZE = 320
 
 
-def profile_for(quality, devices=1, fps=None):
+def profile_for(quality, devices=1, fps=None, size=None):
     """Resolve the model, output size and frame rate for a quality tier."""
     if quality not in QUALITY_PROFILES:
         raise ValueError("quality must be " + ", ".join(QUALITY_PROFILES))
     profile = dict(QUALITY_PROFILES[quality])
+    if profile["model"] == "pro" and devices < 2:
+        profile["size"] = SINGLE_GPU_PRO_SIZE
+    if size is not None:
+        profile["size"] = int(size)
     if fps is not None:
         profile["fps"] = int(fps)
-    elif profile["model"] == "pro" and devices < 2:
-        profile["fps"] = SINGLE_GPU_PRO_FPS
     return profile
 
 

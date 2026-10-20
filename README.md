@@ -263,14 +263,15 @@ The built-in demo uses WebSocket playback through the server's HTTP port, includ
 | --- | --- | --- | --- | --- |
 | `low` | Lite | 512 | 25 | Fastest; several times real time on one GPU. |
 | `medium` | Lite | 768 | 25 | Same model, more spatial detail; still real time on one GPU. |
-| `high` | Pro | 512 | 25 (8 on one GPU) | Better motion; needs a GPU pair to hold 25 FPS. |
+| `high` | Pro | 512 (320 on one GPU) | 25 | Better motion; a GPU pair renders it at 512. |
 
 The Pro model costs roughly seven times more per frame than the Lite model
 because its VAE keeps four times the spatial resolution, so one GPU cannot
-produce it at 25 FPS. A single-GPU worker therefore runs the Pro model at 8
-FPS, which is the rate it can sustain in real time; the playout timeline
-follows the model's rate, so the viewer stays in sync and never starves. Set
-`fps` on a worker in `workers.yaml` to override the rate.
+render it at 512 within the real-time budget. Lowering its frame rate instead
+would make it animate the audio too slowly and the lip sync would drift, so a
+single-GPU worker renders the Pro model at 320 and keeps the model's native 25
+FPS motion cadence: 35 FPS at 320 against 12 FPS at 512 on one RTX 4090. Set
+`fps` or `size` on a worker in `workers.yaml` to override either value.
 
 ### Choose GPUs in the demo
 

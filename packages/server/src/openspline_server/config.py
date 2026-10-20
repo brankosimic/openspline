@@ -13,9 +13,10 @@ class WorkerConfig:
     id: str = "gpu-0"
     quality: str = "low"
     devices: tuple[int, ...] = (0,)
-    # Optional frame-rate override; by default each quality tier picks a rate
-    # that its model can sustain on the configured GPUs.
+    # Optional frame-rate and output-size overrides; by default each quality
+    # tier picks values its model can sustain on the configured GPUs.
     fps: int | None = None
+    size: int | None = None
 
 
 @dataclass
@@ -55,6 +56,10 @@ class Settings:
                 raise ValueError("quality must be " + ", ".join(QUALITIES))
             if w.fps is not None and (type(w.fps) is not int or w.fps < 1 or w.fps > 60):
                 raise ValueError("fps must be between 1 and 60")
+            if w.size is not None and (type(w.size) is not int or w.size < 64 or w.size > 2048):
+                raise ValueError("size must be between 64 and 2048")
+            if w.size is not None and w.size % 16:
+                raise ValueError("size must be a multiple of 16")
             if not w.devices or any(type(d) is not int or d < 0 for d in w.devices):
                 raise ValueError("Invalid device IDs")
             if len(set(w.devices)) != len(w.devices) or occupied.intersection(w.devices):
@@ -102,6 +107,7 @@ class Settings:
                 quality=w.get("quality", "low"),
                 devices=tuple(w["devices"]),
                 fps=w.get("fps"),
+                size=w.get("size"),
             )
             for w in data.pop("workers", [{"id": "gpu-0", "devices": [0]}])
         ]

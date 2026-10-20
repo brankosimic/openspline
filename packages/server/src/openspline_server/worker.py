@@ -58,7 +58,9 @@ class GPUEngine:
             from ._vendor.flash_head import inference as inf
 
         self.inf = inf
-        profile = profile_for(settings["quality"], world_size, settings.get("fps"))
+        profile = profile_for(
+            settings["quality"], world_size, settings.get("fps"), settings.get("size")
+        )
         self.size = profile["size"]
         # The vendored pipeline reads these globals, so the tier's size and
         # frame rate must be applied before the pipeline is built.
@@ -281,6 +283,7 @@ class Worker:
             quality=self.config.quality,
             devices=self.config.devices,
             fps=self.config.fps,
+            size=self.config.size,
         )
         self.process = mp.get_context("spawn").Process(
             target=_process_main, args=(payload, child), daemon=False

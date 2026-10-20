@@ -18,11 +18,12 @@ def test_quality_profiles_pick_a_model_size_and_frame_rate():
     assert QUALITIES == ("low", "medium", "high")
     assert profile_for("low") == {"model": "lite", "size": 512, "fps": 25}
     assert profile_for("medium") == {"model": "lite", "size": 768, "fps": 25}
-    # The Pro model cannot sustain 25 fps on one GPU.
-    assert profile_for("high", devices=1)["fps"] == 8
-    assert profile_for("high", devices=2)["fps"] == 25
-    # An explicit frame rate always wins.
+    # One GPU renders the Pro model smaller so it keeps the 25 FPS cadence.
+    assert profile_for("high", devices=1) == {"model": "pro", "size": 320, "fps": 25}
+    assert profile_for("high", devices=2) == {"model": "pro", "size": 512, "fps": 25}
+    # Explicit frame rate and size always win.
     assert profile_for("high", devices=1, fps=20)["fps"] == 20
+    assert profile_for("high", devices=1, size=384)["size"] == 384
     with pytest.raises(ValueError):
         profile_for("ultra")
 
@@ -36,6 +37,8 @@ def test_worker_config_accepts_the_new_tier_and_validates_the_frame_rate():
         Settings(workers=[WorkerConfig("a", "low", (0,), fps=0)])
     with pytest.raises(ValueError):
         Settings(workers=[WorkerConfig("a", "medium", (0, 1))])
+    with pytest.raises(ValueError):
+        Settings(workers=[WorkerConfig("a", "low", (0,), size=300)])
 
 
 def test_session_descriptor_reports_the_frame_size(tmp_path):
