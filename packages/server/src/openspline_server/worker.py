@@ -470,6 +470,7 @@ class WorkerPool:
             if worker.owner is not None or getattr(worker, "recovering", None):
                 raise CapacityError(
                     "GPU is busy. End its current session before switching quality."
+                    + (f" (session {worker.owner})" if worker.owner else "")
                 )
             worker.owner = owner
             return worker

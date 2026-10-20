@@ -84,7 +84,7 @@ $('setup').onsubmit=async e=>{e.preventDefault();$('start').disabled=true;$('qua
  }else{
    media=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true}});if(session!==activeSession){media.getTracks().forEach(t=>t.stop());throw playbackError??new Error('Session ended.');}context=new AudioContext({sampleRate:24000});await context.audioWorklet.addModule('/static/microphone.js');if(session!==activeSession)throw playbackError??new Error('Session ended.');worklet=new AudioWorkletNode(context,'pcm-capture');context.createMediaStreamSource(media).connect(worklet);worklet.port.onmessage=({data})=>{if(ws?.readyState===WebSocket.OPEN&&ws.bufferedAmount<100000)ws.send(data);};worklet.connect(context.destination);$('status').textContent=providerNotice??'Connected. Speak naturally; interrupt at any time.';
  }
-}catch(error){$('status').textContent=(playbackError??error).message;await stop(false);}finally{$('start').disabled=false;$('quality').disabled=false;gpuPicker?.lock(false);}};
+}catch(error){const message=(playbackError??error).message;$('status').textContent=message.includes('GPU is busy')?'Another demo session is using the GPU. Press "End session" in that tab (or close it), then start again.':message;await stop(false);}finally{$('start').disabled=false;$('quality').disabled=false;gpuPicker?.lock(false);}};
 async function stop(message=true){
  if(stopping)return stopping;
  stopping=(async()=>{
