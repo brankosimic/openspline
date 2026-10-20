@@ -75,6 +75,10 @@ class GPUEngine:
                 settings["audio_model_dir"],
                 param_dtype=dtype,
             )
+        if settings.get("compile"):
+            with WarmupSpan("model_compile", synchronize=torch.cuda.synchronize):
+                self.pipeline.model = torch.compile(self.pipeline.model, mode="default")
+                self.pipeline.vae.decode = torch.compile(self.pipeline.vae.decode, mode="default")
         if world_size > 1:
             import torch.distributed as dist
 
@@ -284,6 +288,7 @@ class Worker:
             devices=self.config.devices,
             fps=self.config.fps,
             size=self.config.size,
+            compile=self.config.compile,
         )
         self.process = mp.get_context("spawn").Process(
             target=_process_main, args=(payload, child), daemon=False

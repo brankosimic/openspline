@@ -17,6 +17,9 @@ class WorkerConfig:
     # tier picks values its model can sustain on the configured GPUs.
     fps: int | None = None
     size: int | None = None
+    # Compile the model with torch.compile. It buys roughly 15 percent, which
+    # is what lets the Pro model hold 25 FPS at 384 on a single GPU.
+    compile: bool = False
 
 
 @dataclass
@@ -60,6 +63,8 @@ class Settings:
                 raise ValueError("size must be between 64 and 2048")
             if w.size is not None and w.size % 16:
                 raise ValueError("size must be a multiple of 16")
+            if type(w.compile) is not bool:
+                raise ValueError("compile must be true or false")
             if not w.devices or any(type(d) is not int or d < 0 for d in w.devices):
                 raise ValueError("Invalid device IDs")
             if len(set(w.devices)) != len(w.devices) or occupied.intersection(w.devices):
@@ -108,6 +113,7 @@ class Settings:
                 devices=tuple(w["devices"]),
                 fps=w.get("fps"),
                 size=w.get("size"),
+                compile=bool(w.get("compile", False)),
             )
             for w in data.pop("workers", [{"id": "gpu-0", "devices": [0]}])
         ]
