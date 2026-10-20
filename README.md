@@ -263,15 +263,17 @@ The built-in demo uses WebSocket playback through the server's HTTP port, includ
 | --- | --- | --- | --- | --- |
 | `low` | Lite | 512 | 25 | Fastest; several times real time on one GPU. |
 | `medium` | Lite | 768 | 25 | Same model, more spatial detail; still real time on one GPU. |
-| `high` | Pro | 512 (320 on one GPU) | 25 | Better motion; a GPU pair renders it at 512. |
+| `high` | Pro | 512 | 25 | Better motion; a GPU pair is needed to hold 25 FPS. |
 
 The Pro model costs roughly seven times more per frame than the Lite model
-because its VAE keeps four times the spatial resolution, so one GPU cannot
-render it at 512 within the real-time budget. Lowering its frame rate instead
-would make it animate the audio too slowly and the lip sync would drift, so a
-single-GPU worker renders the Pro model at 320 and keeps the model's native 25
-FPS motion cadence: 35 FPS at 320 against 12 FPS at 512 on one RTX 4090. Set
-`fps` or `size` on a worker in `workers.yaml` to override either value.
+because its VAE keeps four times the spatial resolution, so one GPU produces
+it at about 12 FPS against a 25 FPS timeline and the viewer underruns. The
+tier keeps the model's trained 25 FPS motion cadence: lowering the rate
+instead would make it animate the audio too slowly and the lip sync would
+drift, and shrinking the output changes the framing it was trained with. Use
+`medium` for a smooth avatar on a single GPU, or give the Pro tier a second
+GPU. A worker may pin `fps` or `size` in `workers.yaml` to override either
+value.
 
 ### Choose GPUs in the demo
 

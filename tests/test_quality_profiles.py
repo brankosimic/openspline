@@ -18,8 +18,8 @@ def test_quality_profiles_pick_a_model_size_and_frame_rate():
     assert QUALITIES == ("low", "medium", "high")
     assert profile_for("low") == {"model": "lite", "size": 512, "fps": 25}
     assert profile_for("medium") == {"model": "lite", "size": 768, "fps": 25}
-    # One GPU renders the Pro model smaller so it keeps the 25 FPS cadence.
-    assert profile_for("high", devices=1) == {"model": "pro", "size": 320, "fps": 25}
+    # Tiers keep the rates their models were trained at, on any GPU count.
+    assert profile_for("high", devices=1) == {"model": "pro", "size": 512, "fps": 25}
     assert profile_for("high", devices=2) == {"model": "pro", "size": 512, "fps": 25}
     # Explicit frame rate and size always win.
     assert profile_for("high", devices=1, fps=20)["fps"] == 20

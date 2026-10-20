@@ -13,20 +13,20 @@ QUALITY_PROFILES = {
     "high": {"model": "pro", "size": 512, "fps": 25},
 }
 QUALITIES = tuple(QUALITY_PROFILES)
-# One GPU cannot render the Pro model at 512 within the real-time budget, and
-# lowering its frame rate would make it animate the audio too slowly, so the
-# lip sync drifts. A smaller output keeps the model's 25 FPS motion cadence
-# and still fits: 35 FPS at 320 against 12 FPS at 512 on a single 24 GB GPU.
-SINGLE_GPU_PRO_SIZE = 320
 
 
 def profile_for(quality, devices=1, fps=None, size=None):
-    """Resolve the model, output size and frame rate for a quality tier."""
+    """Resolve the model, output size and frame rate for a quality tier.
+
+    The tiers keep the frame rates their models were trained at. Lowering the
+    Pro model's rate makes it animate the audio too slowly, so the lip sync
+    drifts; shrinking its output instead changes the framing the model was
+    trained with. Neither is a good trade, so a tier only changes when the
+    deployment asks for it explicitly.
+    """
     if quality not in QUALITY_PROFILES:
         raise ValueError("quality must be " + ", ".join(QUALITY_PROFILES))
     profile = dict(QUALITY_PROFILES[quality])
-    if profile["model"] == "pro" and devices < 2:
-        profile["size"] = SINGLE_GPU_PRO_SIZE
     if size is not None:
         profile["size"] = int(size)
     if fps is not None:
