@@ -16,6 +16,7 @@ from pathlib import Path
 
 import numpy as np
 
+from .quality import QUALITIES, profile_for
 from .warmup import WarmupSpan
 
 
@@ -30,6 +31,7 @@ class CapacityError(RuntimeError):
 class TestEngine:
     def __init__(self):
         self.fps, self.chunk_samples, self.cache_samples = 25, 15360, 128000
+        self.size = 512
         self.image = None
 
     def prepare(self, image, seed=0):
@@ -56,14 +58,27 @@ class GPUEngine:
             from ._vendor.flash_head import inference as inf
 
         self.inf = inf
+        profile = profile_for(
+            settings["quality"], world_size, settings.get("fps"), settings.get("size")
+        )
+        self.size = profile["size"]
+        # The vendored pipeline reads these globals, so the tier's size and
+        # frame rate must be applied before the pipeline is built.
+        inf.infer_params["tgt_fps"] = profile["fps"]
+        inf.infer_params["height"] = profile["size"]
+        inf.infer_params["width"] = profile["size"]
         with WarmupSpan("pipeline_load", synchronize=torch.cuda.synchronize):
             self.pipeline = inf.get_pipeline(
                 world_size,
                 settings["model_dir"],
-                "lite" if settings["quality"] == "low" else "pro",
+                profile["model"],
                 settings["audio_model_dir"],
                 param_dtype=dtype,
             )
+        if settings.get("compile"):
+            with WarmupSpan("model_compile", synchronize=torch.cuda.synchronize):
+                self.pipeline.model = torch.compile(self.pipeline.model, mode="default")
+                self.pipeline.vae.decode = torch.compile(self.pipeline.vae.decode, mode="default")
         if world_size > 1:
             import torch.distributed as dist
 
@@ -138,6 +153,7 @@ def _rank_main(rank, world_size, settings, conn, port):
                     "ready",
                     dict(
                         fps=engine.fps,
+                        size=engine.size,
                         chunk_samples=engine.chunk_samples,
                         cache_samples=engine.cache_samples,
                         world_size=world_size,
@@ -270,6 +286,9 @@ class Worker:
             runtime_dir=self.settings.runtime_dir,
             quality=self.config.quality,
             devices=self.config.devices,
+            fps=self.config.fps,
+            size=self.config.size,
+            compile=self.config.compile,
         )
         self.process = mp.get_context("spawn").Process(
             target=_process_main, args=(payload, child), daemon=False
@@ -358,7 +377,11 @@ class WorkerPool:
         self.settings = settings
         first = settings.workers[0]
         self.demo_devices = (
-            {"low": first.devices[:1], "high": settings.demo_high_devices or first.devices}
+            {
+                "low": first.devices[:1],
+                "medium": first.devices[:1],
+                "high": settings.demo_high_devices or first.devices,
+            }
             if len(settings.workers) == 1
             else {}
         )
@@ -409,8 +432,8 @@ class WorkerPool:
 
     async def reserve_quality_switch(self, quality, owner, devices=None):
         """Reserve one worker's GPU group; never displace an active session."""
-        if not isinstance(quality, str) or quality not in {"low", "high"}:
-            raise ValueError("quality must be low or high")
+        if not isinstance(quality, str) or quality not in QUALITIES:
+            raise ValueError("quality must be " + ", ".join(QUALITIES))
         if devices is not None:
             if len(self.workers) != 1:
                 raise ValueError(
@@ -421,9 +444,11 @@ class WorkerPool:
                 or not devices
                 or any(type(d) is not int or d < 0 for d in devices)
                 or len(set(devices)) != len(devices)
-                or (quality == "low" and len(devices) != 1)
+                or (quality in {"low", "medium"} and len(devices) != 1)
             ):
-                raise ValueError("Select one GPU for Low, or one or more unique GPUs for High")
+                raise ValueError(
+                    "Select one GPU for Low or Medium, or one or more unique GPUs for High"
+                )
             try:
                 allowed = {d["id"] for d in await self.gpu_options()}
             except (OSError, subprocess.SubprocessError) as exc:
@@ -450,6 +475,7 @@ class WorkerPool:
             if worker.owner is not None or getattr(worker, "recovering", None):
                 raise CapacityError(
                     "GPU is busy. End its current session before switching quality."
+                    + (f" (session {worker.owner})" if worker.owner else "")
                 )
             worker.owner = owner
             return worker
@@ -462,6 +488,7 @@ class WorkerPool:
         mapping = dict(self.demo_devices)
         if devices is not None:
             mapping["low"] = target[:1]
+            mapping["medium"] = target[:1]
             if quality == "high" or mapping["high"][:1] != target[:1]:
                 mapping["high"] = target
         unloaded = False
@@ -479,6 +506,8 @@ class WorkerPool:
                     raise WorkerFailure(worker.error or "Model could not load")
             if devices is not None and self.settings.save_demo_selection:
                 options = {d["id"]: d["physical_id"] for d in await self.gpu_options()}
+                # The full GPU group is remembered for restarts; the quality
+                # decides how many of those GPUs the tier actually uses.
                 await asyncio.to_thread(
                     self.settings.save_demo_selection,
                     [options[d] for d in mapping["high"]],

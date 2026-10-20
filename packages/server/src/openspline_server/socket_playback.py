@@ -43,7 +43,13 @@ class SocketPlayback:
     async def send(self):
         s = self.session
         await self.websocket.send_json(
-            {"type": "connected", "epoch": s.epoch, "frame_content": s.frame_content}
+            {
+                "type": "connected",
+                "epoch": s.epoch,
+                "frame_content": s.frame_content,
+                "size": getattr(s, "size", 512),
+                "fps": getattr(getattr(s, "worker", None), "info", {}).get("fps", 25),
+            }
         )
         while not self.closed and not s.closed:
             while not self.events.empty():

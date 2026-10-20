@@ -32,6 +32,7 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 from .background import MAX_BACKGROUND_BYTES, Background
 from .config import Settings
 from .media import AudioTrack, VideoTrack
+from .quality import QUALITIES
 from .session import Session
 from .socket_playback import SocketPlayback, jpeg
 from .worker import CapacityError, WorkerPool
@@ -108,7 +109,12 @@ def create_app(settings: Settings | None = None):
         return s
 
     def authorize(request, s, viewer=False):
-        token = request.headers.get("authorization", "").removeprefix("Bearer ")
+        # A reverse proxy that protects the site with HTTP basic auth makes
+        # browsers replay the cached Basic credentials instead of the caller's
+        # Authorization header, so the token may also arrive in its own header.
+        token = request.headers.get("x-session-token", "")
+        if not token:
+            token = request.headers.get("authorization", "").removeprefix("Bearer ")
         expected = s.viewer_token if viewer else s.publisher_token
         if not secrets.compare_digest(token, expected):
             raise HTTPException(401, "Invalid session token")
@@ -214,7 +220,7 @@ def create_app(settings: Settings | None = None):
             {
                 "workers": workers,
                 "backend": settings.backend,
-                "demo_qualities": ["low", "high"]
+                "demo_qualities": list(QUALITIES)
                 if len(pool.workers) == 1
                 else sorted({w.config.quality for w in pool.workers}),
                 "demo_devices": pool.demo_devices,
@@ -254,10 +260,10 @@ def create_app(settings: Settings | None = None):
     async def create(
         portrait: UploadFile = File(...),
         quality: str = Form("low"),
-        background: UploadFile | None = File(None),
+        background: UploadFile | None = Form(None),
     ):
-        if quality not in {"low", "high"}:
-            raise HTTPException(422, "quality must be low or high")
+        if quality not in QUALITIES:
+            raise HTTPException(422, "quality must be " + ", ".join(QUALITIES))
         raw = await portrait.read(10 * 1024 * 1024 + 1)
         if len(raw) > 10 * 1024 * 1024:
             raise HTTPException(413, "Portrait limit is 10 MiB")
@@ -266,41 +272,45 @@ def create_app(settings: Settings | None = None):
             if picture.width * picture.height > 16_000_000:
                 raise ValueError("Portrait limit is 16 megapixels")
             picture = ImageOps.exif_transpose(picture).convert("RGBA")
-            # Prepare once for both idle playback and GPU conditioning. The model
-            # center-crops to 512 square; packing the full photo here prevents it
-            # from discarding the sides of landscape portraits (or head/chin).
-            content = ImageOps.contain(picture, (512, 512), Image.Resampling.LANCZOS)
-            width, height = content.size
-            left, top = (512 - width) // 2, (512 - height) // 2
-            alpha = Image.new("L", (512, 512), 0)
-            alpha.paste(content.getchannel("A"), (left, top))
-            color = picture.convert("RGB").resize((1, 1), Image.Resampling.BOX).getpixel((0, 0))
-            picture = Image.new("RGB", (512, 512), color)
-            picture.paste(content.convert("RGB"), (left, top))
         except (UnidentifiedImageError, ValueError, OSError, Image.DecompressionBombError) as exc:
             raise HTTPException(422, str(exc)) from exc
-        compositor = None
+        raw_background = None
         if background is not None:
             raw_background = await background.read(MAX_BACKGROUND_BYTES + 1)
             if len(raw_background) > MAX_BACKGROUND_BYTES:
                 raise HTTPException(413, "Background limit is 25 MiB")
+        id = secrets.token_hex(16)
+        try:
+            worker = await pool.acquire(quality, id)
+        except CapacityError as exc:
+            raise HTTPException(429, {"code": "capacity", "message": str(exc)}) from exc
+        except ValueError as exc:
+            raise HTTPException(422, {"code": "configuration", "message": str(exc)}) from exc
+        # Prepare once for both idle playback and GPU conditioning. The model
+        # center-crops to its own square; packing the full photo here prevents
+        # it from discarding the sides of landscape portraits (or head/chin).
+        size = worker.info.get("size", 512)
+        try:
+            content = ImageOps.contain(picture, (size, size), Image.Resampling.LANCZOS)
+            width, height = content.size
+            left, top = (size - width) // 2, (size - height) // 2
+            alpha = Image.new("L", (size, size), 0)
+            alpha.paste(content.getchannel("A"), (left, top))
+            color = picture.convert("RGB").resize((1, 1), Image.Resampling.BOX).getpixel((0, 0))
+            picture = Image.new("RGB", (size, size), color)
+            picture.paste(content.convert("RGB"), (left, top))
+        except (UnidentifiedImageError, ValueError, OSError, Image.DecompressionBombError) as exc:
+            await pool.release(worker, id)
+            raise HTTPException(422, str(exc)) from exc
+        compositor = None
+        if raw_background is not None:
             try:
                 compositor = await asyncio.to_thread(
                     Background, raw_background, alpha, (left, top, width, height)
                 )
             except (ValueError, OSError, Image.DecompressionBombError) as exc:
+                await pool.release(worker, id)
                 raise HTTPException(422, str(exc)) from exc
-        id = secrets.token_hex(16)
-        try:
-            worker = await pool.acquire(quality, id)
-        except CapacityError as exc:
-            if compositor:
-                compositor.close()
-            raise HTTPException(429, {"code": "capacity", "message": str(exc)}) from exc
-        except ValueError as exc:
-            if compositor:
-                compositor.close()
-            raise HTTPException(422, {"code": "configuration", "message": str(exc)}) from exc
         folder = Path(settings.runtime_dir) / "sessions" / id
         try:
             folder.mkdir(parents=True)

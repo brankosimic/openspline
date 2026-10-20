@@ -32,9 +32,9 @@ def test_demo_switches_both_directions_on_one_worker(tmp_path):
     app = create_app(Settings(backend="test", runtime_dir=str(tmp_path)))
     with TestClient(app) as client:
         worker = app.state.pool.workers[0]
-        assert client.get("/readyz").json()["demo_qualities"] == ["low", "high"]
+        assert client.get("/readyz").json()["demo_qualities"] == ["low", "medium", "high"]
         pid = worker.process.pid
-        for quality in ["high", "low"]:
+        for quality in ["high", "medium", "low"]:
             job = wait(client, client.post("/v1/demo/quality", json={"quality": quality}))
             assert job["state"] == "ready", job
             assert (
@@ -163,7 +163,11 @@ def test_demo_switch_keeps_the_full_high_gpu_group(tmp_path, initial):
     )
     app = create_app(settings)
     with TestClient(app) as client:
-        assert client.get("/readyz").json()["demo_devices"] == {"low": [0], "high": [0, 1]}
+        assert client.get("/readyz").json()["demo_devices"] == {
+            "low": [0],
+            "medium": [0],
+            "high": [0, 1],
+        }
         worker = app.state.pool.workers[0]
         for quality in ["low", "high", "low", "high"]:
             result = client.post("/v1/demo/quality", json={"quality": quality})
@@ -264,7 +268,7 @@ def test_failed_gpu_change_rolls_back_selection(tmp_path, monkeypatch, failure):
         assert job["state"] == "error" and not saved
         assert worker.ready and worker.config.devices == (0,) and worker.config.quality == "low"
         assert worker.owner is None
-        assert app.state.pool.demo_devices == {"low": (0,), "high": (0, 1)}
+        assert app.state.pool.demo_devices == {"low": (0,), "medium": (0,), "high": (0, 1)}
 
 
 async def test_gpu_change_cannot_displace_session_or_race_another_change(tmp_path):

@@ -1,4 +1,5 @@
 import { SocketPlayback } from './socket.js';
+import { sessionTokenHeaders } from './socket.js';
 export class AvatarConnection extends EventTarget {
     session;
     video;
@@ -34,7 +35,7 @@ export class AvatarConnection extends EventTarget {
             await playback.connect();
             return;
         }
-        const ice = await fetch(`${this.session.url}/v1/sessions/${this.session.id}/ice`, { headers: { Authorization: `Bearer ${this.session.token}` } });
+        const ice = await fetch(`${this.session.url}/v1/sessions/${this.session.id}/ice`, { headers: sessionTokenHeaders(this.session.token) });
         if (!ice.ok)
             throw new Error('Playback credentials expired or session unavailable');
         const config = await ice.json();
@@ -95,7 +96,7 @@ export class AvatarConnection extends EventTarget {
                 pc.close();
                 return;
             }
-            const response = await fetch(`${this.session.url}/v1/sessions/${this.session.id}/offer`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.session.token}` }, body: JSON.stringify(pc.localDescription) });
+            const response = await fetch(`${this.session.url}/v1/sessions/${this.session.id}/offer`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...sessionTokenHeaders(this.session.token) }, body: JSON.stringify(pc.localDescription) });
             if (!response.ok) {
                 const error = await response.json();
                 throw new Error(error.error?.message ?? 'Cannot connect to avatar');

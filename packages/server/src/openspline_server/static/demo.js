@@ -1,4 +1,5 @@
 import{registerAvatarElement}from'./browser/element.js';registerAvatarElement();
+import{sessionTokenHeaders}from'./browser/socket.js';
 import{waitForPlayback}from'./playback-ready.js';
 import{prepareDemoQuality}from'./demo-quality.js';
 import{setupGpuPicker}from'./demo-gpus.js';
@@ -63,13 +64,13 @@ $('setup').onsubmit=async e=>{e.preventDefault();$('start').disabled=true;$('qua
  const playbackReady=waitForPlayback($('avatar'),{signal:playbackAbort.signal,onBlocked:()=>{$('status').textContent='Click Enable playback on the avatar to continue.';}});playbackReady.catch(()=>{});
  const activeAvatar=$('avatar'),activeSession=session;
  activeAvatar.addEventListener('avatarerror',e=>{if(session!==activeSession||$('avatar')!==activeAvatar)return;playbackError=e.detail instanceof Error?e.detail:new Error(String(e.detail));$('status').textContent=playbackError.message;void stop(false);},{once:true});
- $('avatar').session={id:session.id,url:location.origin,token:session.token,transport:'websocket'};$('avatar').hidden=false;$('empty').hidden=true;$('portrait-preview').hidden=true;$('stop').hidden=false;
+ $('avatar').session={id:session.id,url:location.origin,token:session.token,transport:'websocket',size:session.size,fps:session.fps};$('avatar').hidden=false;$('empty').hidden=true;$('portrait-preview').hidden=true;$('stop').hidden=false;
  await connect(`/v1/sessions/${session.id}/${source==='file'?'audio':'demo/'+source}`,session.publisher_token,apiKey,agentId);
  await playbackReady;
  if(source==='file'){
    let recordingError;
    try{recording=createDemoRecording(activeAvatar.connection);}catch(error){recordingError=error;}
-   $('status').textContent='Generating synchronized audio and video…';const audio=new FormData();audio.set('audio',file);await request(`/v1/sessions/${session.id}/file`,{method:'POST',headers:{Authorization:`Bearer ${session.publisher_token}`},body:audio});
+   $('status').textContent='Generating synchronized audio and video…';const audio=new FormData();audio.set('audio',file);await request(`/v1/sessions/${session.id}/file`,{method:'POST',headers:sessionTokenHeaders(session.publisher_token),body:audio});
    if(session!==activeSession)return;
    await send('end_turn');
    if(session!==activeSession)return;
@@ -83,12 +84,12 @@ $('setup').onsubmit=async e=>{e.preventDefault();$('start').disabled=true;$('qua
  }else{
    media=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true}});if(session!==activeSession){media.getTracks().forEach(t=>t.stop());throw playbackError??new Error('Session ended.');}context=new AudioContext({sampleRate:24000});await context.audioWorklet.addModule('/static/microphone.js');if(session!==activeSession)throw playbackError??new Error('Session ended.');worklet=new AudioWorkletNode(context,'pcm-capture');context.createMediaStreamSource(media).connect(worklet);worklet.port.onmessage=({data})=>{if(ws?.readyState===WebSocket.OPEN&&ws.bufferedAmount<100000)ws.send(data);};worklet.connect(context.destination);$('status').textContent=providerNotice??'Connected. Speak naturally; interrupt at any time.';
  }
-}catch(error){$('status').textContent=(playbackError??error).message;await stop(false);}finally{$('start').disabled=false;$('quality').disabled=false;gpuPicker?.lock(false);}};
+}catch(error){const message=(playbackError??error).message;$('status').textContent=message.includes('GPU is busy')?'Another demo session is using the GPU. Press "End session" in that tab (or close it), then start again.':message;await stop(false);}finally{$('start').disabled=false;$('quality').disabled=false;gpuPicker?.lock(false);}};
 async function stop(message=true){
  if(stopping)return stopping;
  stopping=(async()=>{
   playbackAbort?.abort();recording?.cancel();recording=null;media?.getTracks().forEach(t=>t.stop());worklet?.disconnect();const socket=ws;ws=null;socket?.close();await context?.close();context=null;
-  if(session){const old=session;session=null;await request(`/v1/sessions/${old.id}`,{method:'DELETE',headers:{Authorization:`Bearer ${old.publisher_token}`}}).catch(()=>{});}
+  if(session){const old=session;session=null;await request(`/v1/sessions/${old.id}`,{method:'DELETE',headers:sessionTokenHeaders(old.publisher_token)}).catch(()=>{});}
   $('avatar')?.remove();const el=document.createElement('openspline-avatar');el.id='avatar';el.hidden=true;$('preview').append(el);$('portrait-preview').hidden=!previewURL;$('stop').hidden=true;if(message)$('status').textContent='Session ended.';
  })();try{await stopping;}finally{stopping=null;}
 }

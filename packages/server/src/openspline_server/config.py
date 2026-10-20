@@ -5,12 +5,21 @@ from pathlib import Path
 
 import yaml
 
+from .quality import QUALITIES
+
 
 @dataclass(frozen=True)
 class WorkerConfig:
     id: str = "gpu-0"
     quality: str = "low"
     devices: tuple[int, ...] = (0,)
+    # Optional frame-rate and output-size overrides; by default each quality
+    # tier picks values its model can sustain on the configured GPUs.
+    fps: int | None = None
+    size: int | None = None
+    # Compile the model with torch.compile. It buys roughly 15 percent, which
+    # is what lets the Pro model hold 25 FPS at 384 on a single GPU.
+    compile: bool = False
 
 
 @dataclass
@@ -46,14 +55,22 @@ class Settings:
         for w in self.workers:
             if w.id in ids:
                 raise ValueError("Duplicate worker id")
-            if w.quality not in {"low", "high"}:
-                raise ValueError("quality must be low or high")
+            if w.quality not in QUALITIES:
+                raise ValueError("quality must be " + ", ".join(QUALITIES))
+            if w.fps is not None and (type(w.fps) is not int or w.fps < 1 or w.fps > 60):
+                raise ValueError("fps must be between 1 and 60")
+            if w.size is not None and (type(w.size) is not int or w.size < 64 or w.size > 2048):
+                raise ValueError("size must be between 64 and 2048")
+            if w.size is not None and w.size % 16:
+                raise ValueError("size must be a multiple of 16")
+            if type(w.compile) is not bool:
+                raise ValueError("compile must be true or false")
             if not w.devices or any(type(d) is not int or d < 0 for d in w.devices):
                 raise ValueError("Invalid device IDs")
             if len(set(w.devices)) != len(w.devices) or occupied.intersection(w.devices):
                 raise ValueError("GPU assignments overlap")
-            if w.quality == "low" and len(w.devices) != 1:
-                raise ValueError("Low quality uses one GPU per worker")
+            if w.quality in {"low", "medium"} and len(w.devices) != 1:
+                raise ValueError("Low and medium quality use one GPU per worker")
             ids.add(w.id)
             occupied.update(w.devices)
         if self.demo_high_devices is not None:
@@ -90,7 +107,14 @@ class Settings:
         data = yaml.safe_load(Path(path).read_text()) if path else {}
         data = data or {}
         workers = [
-            WorkerConfig(id=w["id"], quality=w.get("quality", "low"), devices=tuple(w["devices"]))
+            WorkerConfig(
+                id=w["id"],
+                quality=w.get("quality", "low"),
+                devices=tuple(w["devices"]),
+                fps=w.get("fps"),
+                size=w.get("size"),
+                compile=bool(w.get("compile", False)),
+            )
             for w in data.pop("workers", [{"id": "gpu-0", "devices": [0]}])
         ]
         return cls(workers=workers, **(data | kwargs))

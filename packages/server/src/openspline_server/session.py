@@ -32,6 +32,7 @@ class Session:
     ):
         self.id, self.worker, self.image, self.settings = id, worker, image, settings
         self.frame_content = frame_content
+        self.size = worker.info.get("size", 512)
         self.publisher_token = secrets.token_urlsafe(32)
         self.viewer_token = secrets.token_urlsafe(32)
         self.token_expires = time.time() + settings.token_ttl
@@ -53,7 +54,8 @@ class Session:
         self.downsampler = av.AudioResampler(format="flt", layout="mono", rate=16000)
         self.model_pending = np.empty(0, dtype=np.float32)
         self.timeline = Timeline(
-            np.asarray(Image.open(image).convert("RGB").resize((512, 512))), background
+            np.asarray(Image.open(image).convert("RGB").resize((self.size, self.size))),
+            background,
         )
         self.task = None
         self.close_lock = asyncio.Lock()
@@ -79,6 +81,8 @@ class Session:
             url=self.settings.public_url,
             token=self.viewer_token,
             expires_at=self.token_expires,
+            size=self.size,
+            fps=self.worker.info.get("fps", 25),
             viewer_url=f"{self.settings.public_url}/view#{self.id}:{self.viewer_token}",
         )
 

@@ -9,6 +9,7 @@ from types import SimpleNamespace
 from dotenv import dotenv_values, load_dotenv, set_key, unset_key
 
 from .config import Settings, WorkerConfig
+from .quality import QUALITIES
 
 
 def environment(root):
@@ -51,7 +52,12 @@ def configure(config, *, demo=False):
         selected_quality = quality or worker.quality
         settings.workers = [
             WorkerConfig(
-                worker.id, selected_quality, group if selected_quality == "high" else group[:1]
+                worker.id,
+                selected_quality,
+                group if selected_quality == "high" else group[:1],
+                worker.fps,
+                worker.size,
+                worker.compile,
             )
         ]
         settings.demo_high_devices = group
@@ -65,17 +71,28 @@ def configure(config, *, demo=False):
         # Select the physical GPU before any CUDA imports; the worker sees logical GPU 0.
         os.environ["CUDA_VISIBLE_DEVICES"] = str(int(gpu))
         worker = settings.workers[0]
-        settings.workers = [WorkerConfig(worker.id, worker.quality, (0,))]
+        settings.workers = [
+            WorkerConfig(worker.id, worker.quality, (0,), worker.fps, worker.size, worker.compile)
+        ]
         settings.demo_high_devices = (0,)
     if quality is not None:
-        if quality not in {"low", "high"} or len(settings.workers) != 1:
-            raise ValueError("OPENSPLINE_QUALITY must be low or high for a single worker")
+        if quality not in QUALITIES or len(settings.workers) != 1:
+            raise ValueError(
+                "OPENSPLINE_QUALITY must be " + ", ".join(QUALITIES) + " for a single worker"
+            )
         worker = settings.workers[0]
         group = settings.demo_high_devices or worker.devices
         if len(worker.devices) > 1:
             settings.demo_high_devices = group
         settings.workers = [
-            WorkerConfig(worker.id, quality, group if quality == "high" else group[:1])
+            WorkerConfig(
+                worker.id,
+                quality,
+                group if quality == "high" else group[:1],
+                worker.fps,
+                worker.size,
+                worker.compile,
+            )
         ]
     if demo and (gpus is not None or gpu is not None):
         # OPENSPLINE_GPUS chooses the initial allocation. Keep the launcher's
@@ -94,7 +111,14 @@ def configure(config, *, demo=False):
             remap = [available[device] for device in selected]
         worker = settings.workers[0]
         settings.workers = [
-            WorkerConfig(worker.id, worker.quality, tuple(remap[d] for d in worker.devices))
+            WorkerConfig(
+                worker.id,
+                worker.quality,
+                tuple(remap[d] for d in worker.devices),
+                worker.fps,
+                worker.size,
+                worker.compile,
+            )
         ]
         settings.demo_high_devices = tuple(remap[d] for d in settings.demo_high_devices)
     settings.__post_init__()

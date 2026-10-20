@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import Literal
 from urllib.parse import urlsplit
 
-Quality = Literal["low", "high"]
+Quality = Literal["low", "medium", "high"]
 
 
 @dataclass(frozen=True)
@@ -35,8 +35,8 @@ class OpensplineConfig:
             raise ValueError(
                 "url must be an HTTP or HTTPS URL without credentials, query, or fragment"
             )
-        if self.quality not in ("low", "high"):
-            raise ValueError("quality must be low or high")
+        if self.quality not in ("low", "medium", "high"):
+            raise ValueError("quality must be low, medium or high")
         for name in ("timeout", "viewer_timeout"):
             value = getattr(self, name)
             if (

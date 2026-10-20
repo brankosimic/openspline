@@ -1,5 +1,6 @@
 import {SocketPlayback} from './socket.js';
-export interface SessionDescriptor {id:string;url:string;token:string;expires_at?:number;viewer_url?:string;transport?:'webrtc'|'websocket'}
+import {sessionTokenHeaders} from './socket.js';
+export interface SessionDescriptor {id:string;url:string;token:string;expires_at?:number;viewer_url?:string;transport?:'webrtc'|'websocket';size?:number;fps?:number}
 export type AvatarState='idle'|'connecting'|'ready'|'speaking'|'disconnected'|'error';
 export class AvatarConnection extends EventTarget {
   private pc?:RTCPeerConnection;private channel?:RTCDataChannel;private timers=new Set<ReturnType<typeof setTimeout>>();private heartbeat?:ReturnType<typeof setInterval>;private statsTimer?:ReturnType<typeof setInterval>;private generation=0;private epoch=0;private lastSamples=-1;private playoutDelay=150;private stream?:MediaStream;private aborted=false;
@@ -16,7 +17,7 @@ export class AvatarConnection extends EventTarget {
       for(const type of ['autoplayblocked','turnend','event','media'])playback.addEventListener(type,e=>this.dispatchEvent(new CustomEvent(type,{detail:(e as CustomEvent).detail})));
       await playback.connect();return;
     }
-    const ice=await fetch(`${this.session.url}/v1/sessions/${this.session.id}/ice`,{headers:{Authorization:`Bearer ${this.session.token}`}});
+    const ice=await fetch(`${this.session.url}/v1/sessions/${this.session.id}/ice`,{headers:sessionTokenHeaders(this.session.token)});
     if(!ice.ok)throw new Error('Playback credentials expired or session unavailable');
     const config=await ice.json();if(this.aborted||generation!==this.generation)return;
     const pc=this.pc=new RTCPeerConnection(config);this.stream=new MediaStream();this.video.srcObject=this.stream;this.video.playsInline=true;
@@ -44,7 +45,7 @@ export class AvatarConnection extends EventTarget {
       await pc.setLocalDescription(await pc.createOffer());
       if(pc.iceGatheringState!=='complete')await new Promise<void>((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('ICE gathering timed out')),15000);pc.addEventListener('icegatheringstatechange',()=>{if(pc.iceGatheringState==='complete'){clearTimeout(timer);resolve();}});});
       if(this.aborted||generation!==this.generation){pc.close();return;}
-      const response=await fetch(`${this.session.url}/v1/sessions/${this.session.id}/offer`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${this.session.token}`},body:JSON.stringify(pc.localDescription)});
+      const response=await fetch(`${this.session.url}/v1/sessions/${this.session.id}/offer`,{method:'POST',headers:{'Content-Type':'application/json',...sessionTokenHeaders(this.session.token)},body:JSON.stringify(pc.localDescription)});
       if(!response.ok){const error=await response.json();throw new Error(error.error?.message??'Cannot connect to avatar');}
       if(this.aborted||generation!==this.generation){pc.close();return;}
       await pc.setRemoteDescription(await response.json());
